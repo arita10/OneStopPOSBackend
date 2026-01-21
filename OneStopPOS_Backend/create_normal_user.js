@@ -9,7 +9,8 @@ const createNormalUser = async () => {
     const fullName = 'Normal User';
     const role = 'user';
 
-    console.log(`Creating user: ${username} (${email})`);
+    console.log(`Creating user on database: ${process.env.DATABASE_URL ? 'Remote/Production' : 'Local'}`);
+    console.log(`Target User: ${username} (${email})`);
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -20,15 +21,16 @@ const createNormalUser = async () => {
        SET email = EXCLUDED.email,
            password = EXCLUDED.password,
            full_name = EXCLUDED.full_name,
-           role = EXCLUDED.role
+           role = EXCLUDED.role,
+           is_active = true
        RETURNING id, username, email, role, created_at`,
       [username, email, hashedPassword, fullName, role]
     );
 
-    console.log('User created/updated successfully:');
+    console.log('✅ User created/updated successfully!');
     console.log(result.rows[0]);
   } catch (err) {
-    console.error('Error creating user:', err);
+    console.error('❌ Error creating user:', err);
   } finally {
     await pool.end();
   }
