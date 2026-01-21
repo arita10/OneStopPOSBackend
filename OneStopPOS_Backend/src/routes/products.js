@@ -67,17 +67,17 @@ router.get('/barcode/:barcode', asyncHandler(async (req, res) => {
  * Create a new product
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const { name, barcode, price, cost, stock, category, description, image_url } = req.body;
+  const { name, barcode, price, cost, stock, category, description, image_url, unit } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: 'Product name is required' });
   }
 
   const result = await pool.query(
-    `INSERT INTO products (name, barcode, price, cost, stock, category, description, image_url)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO products (name, barcode, price, cost, stock, category, description, image_url, unit)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
-    [name, barcode || null, price || 0, cost || 0, stock || 0, category || null, description || null, image_url || null]
+    [name, barcode || null, price || 0, cost || 0, stock || 0, category || null, description || null, image_url || null, unit || 'pcs']
   );
 
   res.status(201).json(result.rows[0]);
@@ -89,7 +89,7 @@ router.post('/', asyncHandler(async (req, res) => {
  */
 router.put('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { name, barcode, price, cost, stock, category, description, image_url } = req.body;
+  const { name, barcode, price, cost, stock, category, description, image_url, unit } = req.body;
 
   const result = await pool.query(
     `UPDATE products
@@ -101,10 +101,11 @@ router.put('/:id', asyncHandler(async (req, res) => {
          category = COALESCE($6, category),
          description = COALESCE($7, description),
          image_url = COALESCE($8, image_url),
+         unit = COALESCE($9, unit),
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = $9 AND is_active = true
+     WHERE id = $10 AND is_active = true
      RETURNING *`,
-    [name, barcode, price, cost, stock, category, description, image_url, id]
+    [name, barcode, price, cost, stock, category, description, image_url, unit, id]
   );
 
   if (result.rows.length === 0) {

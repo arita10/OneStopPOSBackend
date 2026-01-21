@@ -19,7 +19,9 @@ const fixUser = async () => {
 
     const pool = new Pool({
       connectionString: dbUrl.trim(),
-      ssl: { rejectUnauthorized: false }
+      ssl: {
+        rejectUnauthorized: false
+      }
     });
 
     try {
