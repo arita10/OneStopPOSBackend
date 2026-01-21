@@ -14,6 +14,7 @@ const { errorHandler, notFound } = require('./middleware/errorHandler');
 
 // Import routes
 const healthRoutes = require('./routes/health');
+const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/products');
 const transactionRoutes = require('./routes/transactions');
 const verisiyeCustomerRoutes = require('./routes/verisiye/customers');
@@ -39,6 +40,7 @@ app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 app.use('/health', healthRoutes);
 
 // API routes
+app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/verisiye/customers', verisiyeCustomerRoutes);
@@ -56,6 +58,7 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     endpoints: {
       health: '/health',
+      auth: '/api/auth',
       products: '/api/products',
       transactions: '/api/transactions',
       verisiye: {
@@ -89,6 +92,7 @@ app.listen(PORT, () => {
 ║                                                           ║
 ║     Endpoints:                                            ║
 ║     - GET  /health                 Health check           ║
+║     - POST /api/auth/login         User login             ║
 ║     - GET  /api/products           Products API           ║
 ║     - GET  /api/transactions       Transactions API       ║
 ║     - GET  /api/verisiye/*         Credit System API      ║

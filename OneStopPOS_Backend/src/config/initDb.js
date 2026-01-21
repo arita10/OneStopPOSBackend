@@ -77,9 +77,21 @@
  *    - closing_balance: Cash at end of day
  *    - notes: Optional notes for the day
  *    - created_at/updated_at: Timestamps
+ *
+ * 7. users - System users with authentication
+ *    - id: Unique identifier
+ *    - username: Unique username for login
+ *    - email: User email address
+ *    - password: Hashed password (bcrypt)
+ *    - full_name: User's full name
+ *    - role: 'admin' or 'user' (admin has full access, user has limited)
+ *    - is_active: Account active status
+ *    - last_login: Last login timestamp
+ *    - created_at/updated_at: Timestamps
  */
 
 const pool = require('./database');
+const bcrypt = require('bcryptjs');
 
 const createTables = async () => {
   const client = await pool.connect();
@@ -193,6 +205,32 @@ const createTables = async () => {
     `);
     console.log('✓ Kasa Balance Sheets table created');
 
+    // 7. Users Table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        full_name VARCHAR(255) NOT NULL,
+        role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'user')) DEFAULT 'user',
+        is_active BOOLEAN DEFAULT true,
+        last_login TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✓ Users table created');
+
+    // Create default admin user if not exists
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    await client.query(`
+      INSERT INTO users (username, email, password, full_name, role)
+      VALUES ('admin', 'admin@onestoppos.com', $1, 'System Administrator', 'admin')
+      ON CONFLICT (username) DO NOTHING
+    `, [hashedPassword]);
+    console.log('✓ Default admin user created (username: admin, password: admin123)');
+
     // Create indexes for better query performance
     await client.query(`CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)`);
@@ -204,6 +242,9 @@ const createTables = async () => {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_verisiye_transactions_customer_id ON verisiye_transactions(customer_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_verisiye_transactions_created_at ON verisiye_transactions(created_at)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_kasa_balance_sheets_date ON kasa_balance_sheets(date)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`);
     console.log('✓ Indexes created');
 
     await client.query('COMMIT');

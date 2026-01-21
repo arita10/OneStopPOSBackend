@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: onestoppos-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false  # Set this manually in Render dashboard for security
+      - key: CORS_ORIGIN
+        value: "*"
