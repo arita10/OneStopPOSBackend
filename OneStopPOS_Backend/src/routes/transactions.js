@@ -9,15 +9,17 @@ const asyncHandler = require('../utils/asyncHandler');
  */
 router.get('/', asyncHandler(async (req, res) => {
   const { limit = 100, offset = 0 } = req.query;
+  const userId = req.user.id;
 
   const result = await pool.query(
     `SELECT * FROM transactions
+     WHERE user_id = $3
      ORDER BY created_at DESC
      LIMIT $1 OFFSET $2`,
-    [parseInt(limit), parseInt(offset)]
+    [parseInt(limit), parseInt(offset), userId]
   );
 
-  const countResult = await pool.query('SELECT COUNT(*) FROM transactions');
+  const countResult = await pool.query('SELECT COUNT(*) FROM transactions WHERE user_id = $1', [userId]);
 
   res.json({
     data: result.rows,
@@ -33,10 +35,11 @@ router.get('/', asyncHandler(async (req, res) => {
  */
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
   const result = await pool.query(
-    'SELECT * FROM transactions WHERE id = $1',
-    [id]
+    'SELECT * FROM transactions WHERE id = $1 AND user_id = $2',
+    [id, userId]
   );
 
   if (result.rows.length === 0) {
@@ -63,6 +66,7 @@ router.post('/', asyncHandler(async (req, res) => {
     notes,
     cashier_id
   } = req.body;
+  const userId = req.user.id;
 
   if (!items || !Array.isArray(items)) {
     return res.status(400).json({ error: 'Items array is required' });
@@ -80,8 +84,8 @@ router.post('/', asyncHandler(async (req, res) => {
     // Create the transaction
     const result = await client.query(
       `INSERT INTO transactions
-       (items, subtotal, discount, tax, total, payment_method, amount_paid, change_amount, notes, cashier_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (items, subtotal, discount, tax, total, payment_method, amount_paid, change_amount, notes, cashier_id, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
       [
         JSON.stringify(items),
@@ -93,7 +97,8 @@ router.post('/', asyncHandler(async (req, res) => {
         amount_paid || total,
         change_amount || 0,
         notes || null,
-        cashier_id || null
+        cashier_id || null,
+        userId
       ]
     );
 
@@ -101,8 +106,8 @@ router.post('/', asyncHandler(async (req, res) => {
     for (const item of items) {
       if (item.product_id) {
         await client.query(
-          'UPDATE products SET stock = stock - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-          [item.quantity || 1, item.product_id]
+          'UPDATE products SET stock = stock - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3',
+          [item.quantity || 1, item.product_id, userId]
         );
       }
     }
@@ -124,6 +129,7 @@ router.post('/', asyncHandler(async (req, res) => {
  */
 router.delete('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
   const client = await pool.connect();
 
@@ -132,8 +138,8 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 
     // Get the transaction first
     const transactionResult = await client.query(
-      'SELECT * FROM transactions WHERE id = $1',
-      [id]
+      'SELECT * FROM transactions WHERE id = $1 AND user_id = $2',
+      [id, userId]
     );
 
     if (transactionResult.rows.length === 0) {
@@ -148,8 +154,8 @@ router.delete('/:id', asyncHandler(async (req, res) => {
       for (const item of transaction.items) {
         if (item.product_id) {
           await client.query(
-            'UPDATE products SET stock = stock + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-            [item.quantity || 1, item.product_id]
+            'UPDATE products SET stock = stock + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3',
+            [item.quantity || 1, item.product_id, userId]
           );
         }
       }
@@ -157,8 +163,8 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 
     // Mark as voided instead of deleting
     await client.query(
-      "UPDATE transactions SET status = 'voided' WHERE id = $1",
-      [id]
+      "UPDATE transactions SET status = 'voided' WHERE id = $1 AND user_id = $2",
+      [id, userId]
     );
 
     await client.query('COMMIT');
@@ -178,9 +184,10 @@ router.delete('/:id', asyncHandler(async (req, res) => {
  */
 router.get('/stats/summary', asyncHandler(async (req, res) => {
   const { startDate, endDate } = req.query;
+  const userId = req.user.id;
 
-  let dateFilter = '';
-  const params = [];
+  let dateFilter = ' AND user_id = $1';
+  const params = [userId];
 
   if (startDate) {
     params.push(startDate);

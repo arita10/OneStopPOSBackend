@@ -17,15 +17,16 @@ router.get('/', asyncHandler(async (req, res) => {
     limit = 100,
     offset = 0
   } = req.query;
+  const userId = req.user.id;
 
   let query = `
     SELECT vt.*, vc.name as customer_name, vc.house_no as customer_house_no, vc.phone as customer_phone
     FROM verisiye_transactions vt
     JOIN verisiye_customers vc ON vt.customer_id = vc.id
-    WHERE 1=1
+    WHERE vt.user_id = $1
   `;
-  const params = [];
-  let paramCount = 0;
+  const params = [userId];
+  let paramCount = 1;
 
   if (customer_id) {
     paramCount++;
@@ -73,10 +74,10 @@ router.get('/', asyncHandler(async (req, res) => {
   let countQuery = `
     SELECT COUNT(*) FROM verisiye_transactions vt
     JOIN verisiye_customers vc ON vt.customer_id = vc.id
-    WHERE 1=1
+    WHERE vt.user_id = $1
   `;
-  const countParams = [];
-  let countParamNum = 0;
+  const countParams = [userId];
+  let countParamNum = 1;
 
   if (customer_id) {
     countParamNum++;
@@ -124,13 +125,14 @@ router.get('/', asyncHandler(async (req, res) => {
  */
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
   const result = await pool.query(
     `SELECT vt.*, vc.name as customer_name, vc.house_no as customer_house_no, vc.phone as customer_phone
      FROM verisiye_transactions vt
      JOIN verisiye_customers vc ON vt.customer_id = vc.id
-     WHERE vt.id = $1`,
-    [id]
+     WHERE vt.id = $1 AND vt.user_id = $2`,
+    [id, userId]
   );
 
   if (result.rows.length === 0) {
@@ -146,6 +148,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
  */
 router.post('/', asyncHandler(async (req, res) => {
   const { customer_id, type, amount, description, reference_id } = req.body;
+  const userId = req.user.id;
 
   if (!customer_id) {
     return res.status(400).json({ error: 'Customer ID is required' });
@@ -166,8 +169,8 @@ router.post('/', asyncHandler(async (req, res) => {
 
     // Get current customer balance
     const customerResult = await client.query(
-      'SELECT * FROM verisiye_customers WHERE id = $1 AND is_active = true',
-      [customer_id]
+      'SELECT * FROM verisiye_customers WHERE id = $1 AND user_id = $2 AND is_active = true',
+      [customer_id, userId]
     );
 
     if (customerResult.rows.length === 0) {
@@ -189,16 +192,16 @@ router.post('/', asyncHandler(async (req, res) => {
 
     // Create the transaction
     const transactionResult = await client.query(
-      `INSERT INTO verisiye_transactions (customer_id, type, amount, description, reference_id, balance_after)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO verisiye_transactions (customer_id, type, amount, description, reference_id, balance_after, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [customer_id, type, amount, description || null, reference_id || null, newBalance]
+      [customer_id, type, amount, description || null, reference_id || null, newBalance, userId]
     );
 
     // Update customer balance
     await client.query(
-      'UPDATE verisiye_customers SET current_balance = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-      [newBalance, customer_id]
+      'UPDATE verisiye_customers SET current_balance = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3',
+      [newBalance, customer_id, userId]
     );
 
     await client.query('COMMIT');
@@ -208,8 +211,8 @@ router.post('/', asyncHandler(async (req, res) => {
       `SELECT vt.*, vc.name as customer_name, vc.house_no as customer_house_no
        FROM verisiye_transactions vt
        JOIN verisiye_customers vc ON vt.customer_id = vc.id
-       WHERE vt.id = $1`,
-      [transactionResult.rows[0].id]
+       WHERE vt.id = $1 AND vt.user_id = $2`,
+      [transactionResult.rows[0].id, userId]
     );
 
     res.status(201).json(fullResult.rows[0]);
@@ -228,6 +231,7 @@ router.post('/', asyncHandler(async (req, res) => {
  */
 router.delete('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
   const client = await pool.connect();
 
@@ -236,8 +240,8 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 
     // Get the transaction
     const transactionResult = await client.query(
-      'SELECT * FROM verisiye_transactions WHERE id = $1',
-      [id]
+      'SELECT * FROM verisiye_transactions WHERE id = $1 AND user_id = $2',
+      [id, userId]
     );
 
     if (transactionResult.rows.length === 0) {
@@ -253,12 +257,12 @@ router.delete('/:id', asyncHandler(async (req, res) => {
       : parseFloat(transaction.amount);
 
     await client.query(
-      'UPDATE verisiye_customers SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
-      [balanceChange, transaction.customer_id]
+      'UPDATE verisiye_customers SET current_balance = current_balance + $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3',
+      [balanceChange, transaction.customer_id, userId]
     );
 
     // Delete the transaction
-    await client.query('DELETE FROM verisiye_transactions WHERE id = $1', [id]);
+    await client.query('DELETE FROM verisiye_transactions WHERE id = $1 AND user_id = $2', [id, userId]);
 
     await client.query('COMMIT');
     res.json({ message: 'Transaction deleted successfully' });

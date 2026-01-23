@@ -103,17 +103,20 @@ const createTables = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS products (
         id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
-        barcode VARCHAR(100) UNIQUE,
+        barcode VARCHAR(100),
         price DECIMAL(10, 2) NOT NULL DEFAULT 0,
         cost DECIMAL(10, 2) DEFAULT 0,
         stock INTEGER NOT NULL DEFAULT 0,
         category VARCHAR(100),
         description TEXT,
         image_url VARCHAR(500),
+        unit VARCHAR(20) DEFAULT 'pcs',
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(barcode, user_id)
       )
     `);
     console.log('✓ Products table created');
@@ -122,6 +125,7 @@ const createTables = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS transactions (
         id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         items JSONB NOT NULL DEFAULT '[]',
         subtotal DECIMAL(10, 2) NOT NULL DEFAULT 0,
         discount DECIMAL(10, 2) DEFAULT 0,
@@ -142,6 +146,7 @@ const createTables = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS verisiye_customers (
         id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         house_no VARCHAR(50),
         phone VARCHAR(50),
@@ -161,6 +166,7 @@ const createTables = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS verisiye_transactions (
         id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         customer_id INTEGER NOT NULL REFERENCES verisiye_customers(id) ON DELETE CASCADE,
         type VARCHAR(20) NOT NULL CHECK (type IN ('credit', 'payment')),
         amount DECIMAL(10, 2) NOT NULL,
@@ -176,6 +182,7 @@ const createTables = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS kasa_expense_products (
         id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         name VARCHAR(255) NOT NULL,
         category VARCHAR(50) NOT NULL CHECK (category IN ('kasa', 'kart', 'devir')),
         description TEXT,
@@ -190,7 +197,8 @@ const createTables = async () => {
     await client.query(`
       CREATE TABLE IF NOT EXISTS kasa_balance_sheets (
         id SERIAL PRIMARY KEY,
-        date DATE NOT NULL UNIQUE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        date DATE NOT NULL,
         items JSONB NOT NULL DEFAULT '[]',
         opening_balance DECIMAL(10, 2) DEFAULT 0,
         total_sales DECIMAL(10, 2) DEFAULT 0,
@@ -200,7 +208,8 @@ const createTables = async () => {
         closing_balance DECIMAL(10, 2) DEFAULT 0,
         notes TEXT,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(date, user_id)
       )
     `);
     console.log('✓ Kasa Balance Sheets table created');
@@ -232,16 +241,28 @@ const createTables = async () => {
     console.log('✓ Default admin user created (username: admin, password: admin123)');
 
     // Create indexes for better query performance
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_products_user_id ON products(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_products_is_active ON products(is_active)`);
+    
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions(created_at)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions(status)`);
+    
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_verisiye_customers_user_id ON verisiye_customers(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_verisiye_customers_house_no ON verisiye_customers(house_no)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_verisiye_customers_name ON verisiye_customers(name)`);
+    
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_verisiye_transactions_user_id ON verisiye_transactions(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_verisiye_transactions_customer_id ON verisiye_transactions(customer_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_verisiye_transactions_created_at ON verisiye_transactions(created_at)`);
+    
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_kasa_expense_products_user_id ON kasa_expense_products(user_id)`);
+    
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_kasa_balance_sheets_user_id ON kasa_balance_sheets(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_kasa_balance_sheets_date ON kasa_balance_sheets(date)`);
+    
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role)`);

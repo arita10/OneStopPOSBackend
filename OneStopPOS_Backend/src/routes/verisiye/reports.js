@@ -9,6 +9,7 @@ const asyncHandler = require('../../utils/asyncHandler');
  */
 router.get('/daily', asyncHandler(async (req, res) => {
   const { date } = req.query;
+  const userId = req.user.id;
 
   const targetDate = date || new Date().toISOString().split('T')[0];
 
@@ -21,8 +22,8 @@ router.get('/daily', asyncHandler(async (req, res) => {
        COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE 0 END), 0) -
        COALESCE(SUM(CASE WHEN type = 'payment' THEN amount ELSE 0 END), 0) as net_credit
      FROM verisiye_transactions
-     WHERE DATE(created_at) = $1`,
-    [targetDate]
+     WHERE DATE(created_at) = $1 AND user_id = $2`,
+    [targetDate, userId]
   );
 
   // Get transactions for the day
@@ -30,9 +31,9 @@ router.get('/daily', asyncHandler(async (req, res) => {
     `SELECT vt.*, vc.name as customer_name, vc.house_no as customer_house_no
      FROM verisiye_transactions vt
      JOIN verisiye_customers vc ON vt.customer_id = vc.id
-     WHERE DATE(vt.created_at) = $1
+     WHERE DATE(vt.created_at) = $1 AND vt.user_id = $2
      ORDER BY vt.created_at DESC`,
-    [targetDate]
+    [targetDate, userId]
   );
 
   res.json({
@@ -48,6 +49,7 @@ router.get('/daily', asyncHandler(async (req, res) => {
  */
 router.get('/by-customer', asyncHandler(async (req, res) => {
   const { house_no, name, start_date, end_date } = req.query;
+  const userId = req.user.id;
 
   let query = `
     SELECT
@@ -64,9 +66,9 @@ router.get('/by-customer', asyncHandler(async (req, res) => {
     LEFT JOIN verisiye_transactions vt ON vc.id = vt.customer_id
   `;
 
-  const params = [];
-  let paramCount = 0;
-  const conditions = ['vc.is_active = true'];
+  const params = [userId];
+  let paramCount = 1;
+  const conditions = ['vc.is_active = true', 'vc.user_id = $1'];
 
   if (house_no) {
     paramCount++;

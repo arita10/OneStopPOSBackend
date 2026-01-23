@@ -9,13 +9,14 @@ const asyncHandler = require('../utils/asyncHandler');
  */
 router.get('/', asyncHandler(async (req, res) => {
   const { search } = req.query;
+  const userId = req.user.id;
 
-  let query = 'SELECT * FROM products WHERE is_active = true';
-  const params = [];
+  let query = 'SELECT * FROM products WHERE is_active = true AND user_id = $1';
+  const params = [userId];
 
   if (search) {
-    query += ' AND (name ILIKE $1 OR barcode ILIKE $1 OR category ILIKE $1)';
     params.push(`%${search}%`);
+    query += ` AND (name ILIKE $${params.length} OR barcode ILIKE $${params.length} OR category ILIKE $${params.length})`;
   }
 
   query += ' ORDER BY name ASC';
@@ -30,10 +31,11 @@ router.get('/', asyncHandler(async (req, res) => {
  */
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
   const result = await pool.query(
-    'SELECT * FROM products WHERE id = $1 AND is_active = true',
-    [id]
+    'SELECT * FROM products WHERE id = $1 AND user_id = $2 AND is_active = true',
+    [id, userId]
   );
 
   if (result.rows.length === 0) {
@@ -49,10 +51,11 @@ router.get('/:id', asyncHandler(async (req, res) => {
  */
 router.get('/barcode/:barcode', asyncHandler(async (req, res) => {
   const { barcode } = req.params;
+  const userId = req.user.id;
 
   const result = await pool.query(
-    'SELECT * FROM products WHERE barcode = $1 AND is_active = true',
-    [barcode]
+    'SELECT * FROM products WHERE barcode = $1 AND user_id = $2 AND is_active = true',
+    [barcode, userId]
   );
 
   if (result.rows.length === 0) {
@@ -68,16 +71,17 @@ router.get('/barcode/:barcode', asyncHandler(async (req, res) => {
  */
 router.post('/', asyncHandler(async (req, res) => {
   const { name, barcode, price, cost, stock, category, description, image_url, unit } = req.body;
+  const userId = req.user.id;
 
   if (!name) {
     return res.status(400).json({ error: 'Product name is required' });
   }
 
   const result = await pool.query(
-    `INSERT INTO products (name, barcode, price, cost, stock, category, description, image_url, unit)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO products (name, barcode, price, cost, stock, category, description, image_url, unit, user_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
-    [name, barcode || null, price || 0, cost || 0, stock || 0, category || null, description || null, image_url || null, unit || 'pcs']
+    [name, barcode || null, price || 0, cost || 0, stock || 0, category || null, description || null, image_url || null, unit || 'pcs', userId]
   );
 
   res.status(201).json(result.rows[0]);
@@ -90,6 +94,7 @@ router.post('/', asyncHandler(async (req, res) => {
 router.put('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { name, barcode, price, cost, stock, category, description, image_url, unit } = req.body;
+  const userId = req.user.id;
 
   const result = await pool.query(
     `UPDATE products
@@ -103,9 +108,9 @@ router.put('/:id', asyncHandler(async (req, res) => {
          image_url = COALESCE($8, image_url),
          unit = COALESCE($9, unit),
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = $10 AND is_active = true
+     WHERE id = $10 AND user_id = $11 AND is_active = true
      RETURNING *`,
-    [name, barcode, price, cost, stock, category, description, image_url, unit, id]
+    [name, barcode, price, cost, stock, category, description, image_url, unit, id, userId]
   );
 
   if (result.rows.length === 0) {
@@ -121,10 +126,11 @@ router.put('/:id', asyncHandler(async (req, res) => {
  */
 router.delete('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
+  const userId = req.user.id;
 
   const result = await pool.query(
-    'UPDATE products SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
-    [id]
+    'UPDATE products SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 RETURNING *',
+    [id, userId]
   );
 
   if (result.rows.length === 0) {
@@ -141,6 +147,7 @@ router.delete('/:id', asyncHandler(async (req, res) => {
 router.patch('/:id/stock', asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { quantity } = req.body;
+  const userId = req.user.id;
 
   if (quantity === undefined || quantity === null) {
     return res.status(400).json({ error: 'Quantity is required' });
@@ -149,9 +156,9 @@ router.patch('/:id/stock', asyncHandler(async (req, res) => {
   const result = await pool.query(
     `UPDATE products
      SET stock = stock + $1, updated_at = CURRENT_TIMESTAMP
-     WHERE id = $2 AND is_active = true
+     WHERE id = $2 AND user_id = $3 AND is_active = true
      RETURNING *`,
-    [quantity, id]
+    [quantity, id, userId]
   );
 
   if (result.rows.length === 0) {
