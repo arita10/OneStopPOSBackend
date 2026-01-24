@@ -9,10 +9,9 @@ const asyncHandler = require('../../utils/asyncHandler');
  */
 router.get('/', asyncHandler(async (req, res) => {
   const { category } = req.query;
-  const userId = req.user.id;
 
-  let query = 'SELECT * FROM kasa_expense_products WHERE is_active = true AND user_id = $1';
-  const params = [userId];
+  let query = 'SELECT * FROM kasa_expense_products WHERE is_active = true';
+  const params = [];
 
   if (category && ['kasa', 'kart', 'devir'].includes(category)) {
     params.push(category);
@@ -31,7 +30,6 @@ router.get('/', asyncHandler(async (req, res) => {
  */
 router.post('/', asyncHandler(async (req, res) => {
   const { name, category, description } = req.body;
-  const userId = req.user.id;
 
   if (!name) {
     return res.status(400).json({ error: 'Expense product name is required' });
@@ -42,10 +40,10 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 
   const result = await pool.query(
-    `INSERT INTO kasa_expense_products (name, category, description, user_id)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO kasa_expense_products (name, category, description)
+     VALUES ($1, $2, $3)
      RETURNING *`,
-    [name, category, description || null, userId]
+    [name, category, description || null]
   );
 
   res.status(201).json(result.rows[0]);
@@ -58,7 +56,6 @@ router.post('/', asyncHandler(async (req, res) => {
 router.put('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { name, category, description } = req.body;
-  const userId = req.user.id;
 
   if (category && !['kasa', 'kart', 'devir'].includes(category)) {
     return res.status(400).json({ error: 'Category must be one of: kasa, kart, devir' });
@@ -70,9 +67,9 @@ router.put('/:id', asyncHandler(async (req, res) => {
          category = COALESCE($2, category),
          description = COALESCE($3, description),
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = $4 AND user_id = $5 AND is_active = true
+     WHERE id = $4 AND is_active = true
      RETURNING *`,
-    [name, category, description, id, userId]
+    [name, category, description, id]
   );
 
   if (result.rows.length === 0) {
@@ -88,11 +85,10 @@ router.put('/:id', asyncHandler(async (req, res) => {
  */
 router.delete('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const userId = req.user.id;
 
   const result = await pool.query(
-    'UPDATE kasa_expense_products SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 RETURNING *',
-    [id, userId]
+    'UPDATE kasa_expense_products SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
+    [id]
   );
 
   if (result.rows.length === 0) {

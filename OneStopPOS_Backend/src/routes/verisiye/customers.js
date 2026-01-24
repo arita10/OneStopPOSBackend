@@ -9,10 +9,9 @@ const asyncHandler = require('../../utils/asyncHandler');
  */
 router.get('/', asyncHandler(async (req, res) => {
   const { search } = req.query;
-  const userId = req.user.id;
 
-  let query = 'SELECT * FROM verisiye_customers WHERE is_active = true AND user_id = $1';
-  const params = [userId];
+  let query = 'SELECT * FROM verisiye_customers WHERE is_active = true';
+  const params = [];
 
   if (search) {
     params.push(`%${search}%`);
@@ -31,11 +30,10 @@ router.get('/', asyncHandler(async (req, res) => {
  */
 router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const userId = req.user.id;
 
   const result = await pool.query(
-    'SELECT * FROM verisiye_customers WHERE id = $1 AND user_id = $2 AND is_active = true',
-    [id, userId]
+    'SELECT * FROM verisiye_customers WHERE id = $1 AND is_active = true',
+    [id]
   );
 
   if (result.rows.length === 0) {
@@ -51,17 +49,16 @@ router.get('/:id', asyncHandler(async (req, res) => {
  */
 router.post('/', asyncHandler(async (req, res) => {
   const { name, house_no, phone, address, email, credit_limit, notes } = req.body;
-  const userId = req.user.id;
 
   if (!name) {
     return res.status(400).json({ error: 'Customer name is required' });
   }
 
   const result = await pool.query(
-    `INSERT INTO verisiye_customers (name, house_no, phone, address, email, credit_limit, notes, user_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO verisiye_customers (name, house_no, phone, address, email, credit_limit, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [name, house_no || null, phone || null, address || null, email || null, credit_limit || 0, notes || null, userId]
+    [name, house_no || null, phone || null, address || null, email || null, credit_limit || 0, notes || null]
   );
 
   res.status(201).json(result.rows[0]);
@@ -74,7 +71,6 @@ router.post('/', asyncHandler(async (req, res) => {
 router.put('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { name, house_no, phone, address, email, credit_limit, notes } = req.body;
-  const userId = req.user.id;
 
   const result = await pool.query(
     `UPDATE verisiye_customers
@@ -86,9 +82,9 @@ router.put('/:id', asyncHandler(async (req, res) => {
          credit_limit = COALESCE($6, credit_limit),
          notes = COALESCE($7, notes),
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = $8 AND user_id = $9 AND is_active = true
+     WHERE id = $8 AND is_active = true
      RETURNING *`,
-    [name, house_no, phone, address, email, credit_limit, notes, id, userId]
+    [name, house_no, phone, address, email, credit_limit, notes, id]
   );
 
   if (result.rows.length === 0) {
@@ -104,11 +100,10 @@ router.put('/:id', asyncHandler(async (req, res) => {
  */
 router.delete('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const userId = req.user.id;
 
   const result = await pool.query(
-    'UPDATE verisiye_customers SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 RETURNING *',
-    [id, userId]
+    'UPDATE verisiye_customers SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
+    [id]
   );
 
   if (result.rows.length === 0) {

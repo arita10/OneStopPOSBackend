@@ -9,11 +9,10 @@ const asyncHandler = require('../../utils/asyncHandler');
  */
 router.get('/', asyncHandler(async (req, res) => {
   const { start_date, end_date, limit = 100, offset = 0 } = req.query;
-  const userId = req.user.id;
 
-  let query = 'SELECT * FROM kasa_balance_sheets WHERE user_id = $1';
-  const params = [userId];
-  let paramCount = 1;
+  let query = 'SELECT * FROM kasa_balance_sheets WHERE 1=1';
+  const params = [];
+  let paramCount = 0;
 
   if (start_date) {
     paramCount++;
@@ -40,9 +39,9 @@ router.get('/', asyncHandler(async (req, res) => {
   const result = await pool.query(query, params);
 
   // Get total count
-  let countQuery = 'SELECT COUNT(*) FROM kasa_balance_sheets WHERE user_id = $1';
-  const countParams = [userId];
-  let countParamNum = 1;
+  let countQuery = 'SELECT COUNT(*) FROM kasa_balance_sheets WHERE 1=1';
+  const countParams = [];
+  let countParamNum = 0;
 
   if (start_date) {
     countParamNum++;
@@ -72,11 +71,10 @@ router.get('/', asyncHandler(async (req, res) => {
  */
 router.get('/:date', asyncHandler(async (req, res) => {
   const { date } = req.params;
-  const userId = req.user.id;
 
   const result = await pool.query(
-    'SELECT * FROM kasa_balance_sheets WHERE date = $1 AND user_id = $2',
-    [date, userId]
+    'SELECT * FROM kasa_balance_sheets WHERE date = $1',
+    [date]
   );
 
   if (result.rows.length === 0) {
@@ -102,7 +100,6 @@ router.post('/', asyncHandler(async (req, res) => {
     closing_balance,
     notes
   } = req.body;
-  const userId = req.user.id;
 
   if (!date) {
     return res.status(400).json({ error: 'Date is required' });
@@ -110,8 +107,8 @@ router.post('/', asyncHandler(async (req, res) => {
 
   // Check if balance sheet exists for this date
   const existingResult = await pool.query(
-    'SELECT id FROM kasa_balance_sheets WHERE date = $1 AND user_id = $2',
-    [date, userId]
+    'SELECT id FROM kasa_balance_sheets WHERE date = $1',
+    [date]
   );
 
   let result;
@@ -129,7 +126,7 @@ router.post('/', asyncHandler(async (req, res) => {
            closing_balance = COALESCE($7, closing_balance),
            notes = COALESCE($8, notes),
            updated_at = CURRENT_TIMESTAMP
-       WHERE date = $9 AND user_id = $10
+       WHERE date = $9
        RETURNING *`,
       [
         items ? JSON.stringify(items) : null,
@@ -140,16 +137,15 @@ router.post('/', asyncHandler(async (req, res) => {
         total_cash_sales,
         closing_balance,
         notes,
-        date,
-        userId
+        date
       ]
     );
   } else {
     // Create new balance sheet
     result = await pool.query(
       `INSERT INTO kasa_balance_sheets
-       (date, items, opening_balance, total_sales, total_expenses, total_card_sales, total_cash_sales, closing_balance, notes, user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (date, items, opening_balance, total_sales, total_expenses, total_card_sales, total_cash_sales, closing_balance, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [
         date,
@@ -160,8 +156,7 @@ router.post('/', asyncHandler(async (req, res) => {
         total_card_sales || 0,
         total_cash_sales || 0,
         closing_balance || 0,
-        notes || null,
-        userId
+        notes || null
       ]
     );
   }
@@ -175,11 +170,10 @@ router.post('/', asyncHandler(async (req, res) => {
  */
 router.delete('/:date', asyncHandler(async (req, res) => {
   const { date } = req.params;
-  const userId = req.user.id;
 
   const result = await pool.query(
-    'DELETE FROM kasa_balance_sheets WHERE date = $1 AND user_id = $2 RETURNING *',
-    [date, userId]
+    'DELETE FROM kasa_balance_sheets WHERE date = $1 RETURNING *',
+    [date]
   );
 
   if (result.rows.length === 0) {

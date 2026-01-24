@@ -9,7 +9,6 @@ const asyncHandler = require('../../utils/asyncHandler');
  */
 router.get('/daily-profit', asyncHandler(async (req, res) => {
   const { start_date, end_date } = req.query;
-  const userId = req.user.id;
 
   let query = `
     SELECT
@@ -21,10 +20,10 @@ router.get('/daily-profit', asyncHandler(async (req, res) => {
       (total_sales - total_expenses) as gross_profit,
       closing_balance
     FROM kasa_balance_sheets
-    WHERE user_id = $1
+    WHERE 1=1
   `;
-  const params = [userId];
-  let paramCount = 1;
+  const params = [];
+  let paramCount = 0;
 
   if (start_date) {
     paramCount++;
@@ -72,14 +71,13 @@ router.get('/daily-profit', asyncHandler(async (req, res) => {
  */
 router.get('/summary', asyncHandler(async (req, res) => {
   const { date } = req.query;
-  const userId = req.user.id;
 
   const targetDate = date || new Date().toISOString().split('T')[0];
 
   // Get balance sheet for the date
   const balanceSheetResult = await pool.query(
-    'SELECT * FROM kasa_balance_sheets WHERE date = $1 AND user_id = $2',
-    [targetDate, userId]
+    'SELECT * FROM kasa_balance_sheets WHERE date = $1',
+    [targetDate]
   );
 
   // Get transactions for the date
@@ -92,8 +90,8 @@ router.get('/summary', asyncHandler(async (req, res) => {
        COALESCE(SUM(CASE WHEN payment_method = 'credit' THEN total ELSE 0 END), 0) as credit_sales,
        COUNT(CASE WHEN status = 'voided' THEN 1 END) as voided_count
      FROM transactions
-     WHERE DATE(created_at) = $1 AND user_id = $2 AND status != 'voided'`,
-    [targetDate, userId]
+     WHERE DATE(created_at) = $1 AND status != 'voided'`,
+    [targetDate]
   );
 
   // Get verisiye (credit) summary for the date
@@ -102,8 +100,8 @@ router.get('/summary', asyncHandler(async (req, res) => {
        COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE 0 END), 0) as credit_given,
        COALESCE(SUM(CASE WHEN type = 'payment' THEN amount ELSE 0 END), 0) as payments_received
      FROM verisiye_transactions
-     WHERE DATE(created_at) = $1 AND user_id = $2`,
-    [targetDate, userId]
+     WHERE DATE(created_at) = $1`,
+    [targetDate]
   );
 
   const balanceSheet = balanceSheetResult.rows[0] || null;
