@@ -102,14 +102,36 @@ router.post('/', asyncHandler(async (req, res) => {
       ]
     );
 
-    // Update product stock for each item
+    // Update product stock for each item and create transaction items
     for (const item of items) {
+      let itemCost = 0;
+
       if (item.product_id) {
-        await client.query(
-          'UPDATE products SET stock = stock - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3',
+        const updateResult = await client.query(
+          'UPDATE products SET stock = stock - $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3 RETURNING cost',
           [item.quantity || 1, item.product_id, userId]
         );
+        
+        if (updateResult.rows.length > 0) {
+          itemCost = updateResult.rows[0].cost;
+        }
       }
+
+      // Insert into transaction_items table
+      await client.query(
+        `INSERT INTO transaction_items 
+         (transaction_id, product_id, product_name, quantity, unit_price, cost, subtotal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          result.rows[0].id,
+          item.product_id || null,
+          item.name || 'Unknown Item',
+          item.quantity || 1,
+          item.price || 0,
+          itemCost || 0,
+          item.subtotal || ((item.price || 0) * (item.quantity || 1))
+        ]
+      );
     }
 
     await client.query('COMMIT');

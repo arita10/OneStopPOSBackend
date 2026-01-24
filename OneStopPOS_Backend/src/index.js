@@ -11,6 +11,7 @@ const morgan = require('morgan');
 
 // Import middleware
 const { errorHandler, notFound } = require('./middleware/errorHandler');
+const { authenticate } = require('./middleware/auth');
 
 // Import routes
 const healthRoutes = require('./routes/health');
@@ -40,16 +41,18 @@ app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 app.use('/health', healthRoutes);
 
 // API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/products', productRoutes);
-app.use('/api/transactions', transactionRoutes);
-app.use('/api/verisiye/customers', verisiyeCustomerRoutes);
-app.use('/api/verisiye/transactions', verisiyeTransactionRoutes);
-app.use('/api/verisiye/reports', verisiyeReportRoutes);
-app.use('/api/verisiye/whatsapp', verisiyeWhatsappRoutes);
-app.use('/api/kasa/expense-products', kasaExpenseProductRoutes);
-app.use('/api/kasa/balance-sheets', kasaBalanceSheetRoutes);
-app.use('/api/kasa/reports', kasaReportRoutes);
+app.use('/api/auth', authRoutes); // Public routes (login/register)
+
+// Protected routes (require authentication)
+app.use('/api/products', authenticate, productRoutes);
+app.use('/api/transactions', authenticate, transactionRoutes);
+app.use('/api/verisiye/customers', authenticate, verisiyeCustomerRoutes);
+app.use('/api/verisiye/transactions', authenticate, verisiyeTransactionRoutes);
+app.use('/api/verisiye/reports', authenticate, verisiyeReportRoutes);
+app.use('/api/verisiye/whatsapp', authenticate, verisiyeWhatsappRoutes);
+app.use('/api/kasa/expense-products', authenticate, kasaExpenseProductRoutes);
+app.use('/api/kasa/balance-sheets', authenticate, kasaBalanceSheetRoutes);
+app.use('/api/kasa/reports', authenticate, kasaReportRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
