@@ -7,14 +7,16 @@ const createTransactionItemsTable = async () => {
     
     await client.query(`
       CREATE TABLE IF NOT EXISTS transaction_items (
-        id SERIAL PRIMARY KEY,
+        id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
         transaction_id INTEGER NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
         product_id INTEGER REFERENCES products(id),
         user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        name VARCHAR(255),
-        quantity DECIMAL(10, 2) NOT NULL DEFAULT 1,
-        price DECIMAL(10, 2) NOT NULL DEFAULT 0,
+        product_name TEXT,
+        unit_price DECIMAL(10, 2) NOT NULL DEFAULT 0,
+        cost DECIMAL(10, 2) NOT NULL DEFAULT 0,
+        quantity DECIMAL(10, 3) NOT NULL DEFAULT 1,
         subtotal DECIMAL(10, 2) NOT NULL DEFAULT 0,
+        is_by_weight BOOLEAN DEFAULT false,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       )
     `);

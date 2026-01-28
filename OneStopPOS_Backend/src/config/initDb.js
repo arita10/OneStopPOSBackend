@@ -108,7 +108,7 @@ const createTables = async () => {
         barcode VARCHAR(100),
         price DECIMAL(10, 2) NOT NULL DEFAULT 0,
         cost DECIMAL(10, 2) DEFAULT 0,
-        stock INTEGER NOT NULL DEFAULT 0,
+        stock DECIMAL(10, 3) NOT NULL DEFAULT 0,
         category VARCHAR(100),
         description TEXT,
         image_url VARCHAR(500),
