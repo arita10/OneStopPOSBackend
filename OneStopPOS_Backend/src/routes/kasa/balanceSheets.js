@@ -9,10 +9,11 @@ const asyncHandler = require('../../utils/asyncHandler');
  */
 router.get('/', asyncHandler(async (req, res) => {
   const { start_date, end_date, limit = 100, offset = 0 } = req.query;
+  const userId = req.user.id;
 
-  let query = 'SELECT * FROM kasa_balance_sheets WHERE 1=1';
-  const params = [];
-  let paramCount = 0;
+  let query = 'SELECT * FROM kasa_balance_sheets WHERE user_id = $1';
+  const params = [userId];
+  let paramCount = 1;
 
   if (start_date) {
     paramCount++;
@@ -26,7 +27,8 @@ router.get('/', asyncHandler(async (req, res) => {
     params.push(end_date);
   }
 
-  query += ' ORDER BY date DESC';
+  // Deterministic sorting
+  query += ' ORDER BY date DESC, id DESC';
 
   paramCount++;
   query += ` LIMIT $${paramCount}`;
@@ -39,9 +41,9 @@ router.get('/', asyncHandler(async (req, res) => {
   const result = await pool.query(query, params);
 
   // Get total count
-  let countQuery = 'SELECT COUNT(*) FROM kasa_balance_sheets WHERE 1=1';
-  const countParams = [];
-  let countParamNum = 0;
+  let countQuery = 'SELECT COUNT(*) FROM kasa_balance_sheets WHERE user_id = $1';
+  const countParams = [userId];
+  let countParamNum = 1;
 
   if (start_date) {
     countParamNum++;

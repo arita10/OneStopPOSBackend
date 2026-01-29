@@ -8,16 +8,35 @@ const asyncHandler = require('../utils/asyncHandler');
  * Get all transactions with pagination
  */
 router.get('/', asyncHandler(async (req, res) => {
-  const { limit = 100, offset = 0 } = req.query;
+  const { limit = 100, offset = 0, start_date, end_date } = req.query;
+  const userId = req.user.id;
 
-  const result = await pool.query(
-    `SELECT * FROM transactions
-     ORDER BY created_at DESC
-     LIMIT $1 OFFSET $2`,
-    [parseInt(limit), parseInt(offset)]
-  );
+  let query = 'SELECT * FROM transactions';
+  let countQuery = 'SELECT COUNT(*) FROM transactions';
+  const conditions = [`user_id = $1`];
+  const params = [userId];
 
-  const countResult = await pool.query('SELECT COUNT(*) FROM transactions');
+  if (start_date) {
+    params.push(start_date);
+    conditions.push(`created_at >= $${params.length}`);
+  }
+
+  if (end_date) {
+    params.push(end_date);
+    conditions.push(`created_at <= $${params.length}`);
+  }
+
+  if (conditions.length > 0) {
+    const whereClause = ' WHERE ' + conditions.join(' AND ');
+    query += whereClause;
+    countQuery += whereClause;
+  }
+
+  // Deterministic sorting: specific primary sort + unique secondary sort
+  query += ` ORDER BY created_at DESC, id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+
+  const result = await pool.query(query, [...params, parseInt(limit), parseInt(offset)]);
+  const countResult = await pool.query(countQuery, params);
 
   res.json({
     data: result.rows,

@@ -17,15 +17,16 @@ router.get('/', asyncHandler(async (req, res) => {
     limit = 100,
     offset = 0
   } = req.query;
+  const userId = req.user.id;
 
   let query = `
     SELECT vt.*, vc.name as customer_name, vc.house_no as customer_house_no, vc.phone as customer_phone
     FROM verisiye_transactions vt
     JOIN verisiye_customers vc ON vt.customer_id = vc.id
-    WHERE 1=1
+    WHERE vt.user_id = $1
   `;
-  const params = [];
-  let paramCount = 0;
+  const params = [userId];
+  let paramCount = 1;
 
   if (customer_id) {
     paramCount++;
@@ -57,7 +58,8 @@ router.get('/', asyncHandler(async (req, res) => {
     params.push(end_date);
   }
 
-  query += ' ORDER BY vt.created_at DESC';
+  // Deterministic sorting
+  query += ' ORDER BY vt.created_at DESC, vt.id DESC';
 
   paramCount++;
   query += ` LIMIT $${paramCount}`;
@@ -73,10 +75,12 @@ router.get('/', asyncHandler(async (req, res) => {
   let countQuery = `
     SELECT COUNT(*) FROM verisiye_transactions vt
     JOIN verisiye_customers vc ON vt.customer_id = vc.id
-    WHERE 1=1
+    WHERE vt.user_id = $1
   `;
-  const countParams = [];
-  let countParamNum = 0;
+  // We can reuse the first (paramCount - 2) parameters from the main query params array (userId + filters)
+  // But strictly, we need to rebuild the params list for the count query to avoid issues with limit/offset
+  const countParams = [userId];
+  let countParamNum = 1;
 
   if (customer_id) {
     countParamNum++;
