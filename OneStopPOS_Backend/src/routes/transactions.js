@@ -9,12 +9,11 @@ const asyncHandler = require('../utils/asyncHandler');
  */
 router.get('/', asyncHandler(async (req, res) => {
   const { limit = 100, offset = 0, start_date, end_date } = req.query;
-  const userId = req.user.id;
 
   let query = 'SELECT * FROM transactions';
   let countQuery = 'SELECT COUNT(*) FROM transactions';
-  const conditions = [`user_id = $1`];
-  const params = [userId];
+  const conditions = [];
+  const params = [];
 
   if (start_date) {
     params.push(start_date);
