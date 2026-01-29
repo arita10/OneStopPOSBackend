@@ -39,6 +39,7 @@ router.get('/stats/summary', asyncHandler(async (req, res) => {
     SELECT
       COUNT(*) as total_transactions,
       COALESCE(SUM(total), 0) as total_sales,
+      COALESCE(SUM(total_profit), 0) as total_profit,
       COALESCE(AVG(total), 0) as average_sale,
       COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total ELSE 0 END), 0) as cash_sales,
       COALESCE(SUM(CASE WHEN payment_method = 'card' THEN total ELSE 0 END), 0) as card_sales,
@@ -209,6 +210,7 @@ router.post('/', asyncHandler(async (req, res) => {
     // Return transaction with items
     res.status(201).json({
       ...transaction,
+      total_profit: calculatedProfit,
       items: insertedItems
     });
 
