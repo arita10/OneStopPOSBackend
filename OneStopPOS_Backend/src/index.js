@@ -20,6 +20,7 @@ const productRoutes = require('./routes/products');
 const categoryRoutes = require('./routes/categories');
 const transactionRoutes = require('./routes/transactions');
 const transactionItemRoutes = require('./routes/transactionItems');
+const supplierRoutes = require('./routes/suppliers');
 const verisiyeCustomerRoutes = require('./routes/verisiye/customers');
 const verisiyeTransactionRoutes = require('./routes/verisiye/transactions');
 const verisiyeReportRoutes = require('./routes/verisiye/reports');
@@ -50,6 +51,7 @@ app.use('/api/products', authenticate, productRoutes);
 app.use('/api/categories', authenticate, categoryRoutes);
 app.use('/api/transactions', authenticate, transactionRoutes);
 app.use('/api/transaction-items', authenticate, transactionItemRoutes);
+app.use('/api/suppliers', authenticate, supplierRoutes);
 app.use('/api/verisiye/customers', authenticate, verisiyeCustomerRoutes);
 app.use('/api/verisiye/transactions', authenticate, verisiyeTransactionRoutes);
 app.use('/api/verisiye/reports', authenticate, verisiyeReportRoutes);
@@ -70,6 +72,7 @@ app.get('/', (req, res) => {
       categories: '/api/categories',
       transactions: '/api/transactions',
       transactionItems: '/api/transaction-items',
+      suppliers: '/api/suppliers',
       verisiye: {
         customers: '/api/verisiye/customers',
         transactions: '/api/verisiye/transactions',
