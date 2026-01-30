@@ -56,12 +56,12 @@ router.get('/stats/summary', asyncHandler(async (req, res) => {
   let query = `
     SELECT
       COUNT(*) as total_transactions,
-      COALESCE(SUM(total), 0) as total_sales,
+      COALESCE(SUM(total_amount), 0) as total_sales,
       COALESCE(SUM(total_profit), 0) as total_profit,
-      COALESCE(AVG(total), 0) as average_sale,
-      COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total ELSE 0 END), 0) as cash_sales,
-      COALESCE(SUM(CASE WHEN payment_method = 'card' THEN total ELSE 0 END), 0) as card_sales,
-      COALESCE(SUM(CASE WHEN payment_method = 'credit' THEN total ELSE 0 END), 0) as credit_sales,
+      COALESCE(AVG(total_amount), 0) as average_sale,
+      COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total_amount ELSE 0 END), 0) as cash_sales,
+      COALESCE(SUM(CASE WHEN payment_method = 'card' THEN total_amount ELSE 0 END), 0) as card_sales,
+      COALESCE(SUM(CASE WHEN payment_method = 'credit' THEN total_amount ELSE 0 END), 0) as credit_sales,
       COUNT(CASE WHEN status = 'voided' THEN 1 END) as voided_transactions
     FROM transactions
     WHERE status != 'voided'
@@ -135,7 +135,7 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 
   if (total === undefined || total === null) {
-    return res.status(400).json({ error: 'Total amount is required' });
+    return res.status(400).json({ error: 'total_amount is required' });
   }
 
   const client = await pool.connect();
@@ -146,7 +146,7 @@ router.post('/', asyncHandler(async (req, res) => {
     // Create the transaction (no items JSONB, no user_id)
     const transactionResult = await client.query(
       `INSERT INTO transactions
-       (subtotal, discount, tax, total, payment_method, amount_paid, change_amount, notes, cashier_id)
+       (subtotal, discount, tax, total_amount, payment_method, amount_paid, change_amount, notes, cashier_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
       [

@@ -84,10 +84,10 @@ router.get('/summary', asyncHandler(async (req, res) => {
   const transactionsResult = await pool.query(
     `SELECT
        COUNT(*) as transaction_count,
-       COALESCE(SUM(total), 0) as total_sales,
-       COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total ELSE 0 END), 0) as cash_sales,
-       COALESCE(SUM(CASE WHEN payment_method = 'card' THEN total ELSE 0 END), 0) as card_sales,
-       COALESCE(SUM(CASE WHEN payment_method = 'credit' THEN total ELSE 0 END), 0) as credit_sales,
+       COALESCE(SUM(total_amount), 0) as total_sales,
+       COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total_amount ELSE 0 END), 0) as cash_sales,
+       COALESCE(SUM(CASE WHEN payment_method = 'card' THEN total_amount ELSE 0 END), 0) as card_sales,
+       COALESCE(SUM(CASE WHEN payment_method = 'credit' THEN total_amount ELSE 0 END), 0) as credit_sales,
        COUNT(CASE WHEN status = 'voided' THEN 1 END) as voided_count
      FROM transactions
      WHERE DATE(created_at) = $1 AND status != 'voided'`,
