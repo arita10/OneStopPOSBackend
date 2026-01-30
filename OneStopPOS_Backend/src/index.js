@@ -17,6 +17,7 @@ const { authenticate } = require('./middleware/auth');
 const healthRoutes = require('./routes/health');
 const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/products');
+const categoryRoutes = require('./routes/categories');
 const transactionRoutes = require('./routes/transactions');
 const transactionItemRoutes = require('./routes/transactionItems');
 const verisiyeCustomerRoutes = require('./routes/verisiye/customers');
@@ -46,6 +47,7 @@ app.use('/api/auth', authRoutes); // Public routes (login/register)
 
 // Protected routes (require authentication)
 app.use('/api/products', authenticate, productRoutes);
+app.use('/api/categories', authenticate, categoryRoutes);
 app.use('/api/transactions', authenticate, transactionRoutes);
 app.use('/api/transaction-items', authenticate, transactionItemRoutes);
 app.use('/api/verisiye/customers', authenticate, verisiyeCustomerRoutes);
@@ -65,6 +67,7 @@ app.get('/', (req, res) => {
       health: '/health',
       auth: '/api/auth',
       products: '/api/products',
+      categories: '/api/categories',
       transactions: '/api/transactions',
       transactionItems: '/api/transaction-items',
       verisiye: {
