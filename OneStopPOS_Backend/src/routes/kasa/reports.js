@@ -19,7 +19,7 @@ router.get('/daily-profit', asyncHandler(async (req, res) => {
       total_cash_sales,
       (total_sales - total_expenses) as gross_profit,
       closing_balance
-    FROM kasa_balance_sheets
+    FROM balance_sheets
     WHERE 1=1
   `;
   const params = [];
@@ -76,7 +76,7 @@ router.get('/summary', asyncHandler(async (req, res) => {
 
   // Get balance sheet for the date
   const balanceSheetResult = await pool.query(
-    'SELECT * FROM kasa_balance_sheets WHERE date = $1',
+    'SELECT * FROM balance_sheets WHERE date = $1',
     [targetDate]
   );
 

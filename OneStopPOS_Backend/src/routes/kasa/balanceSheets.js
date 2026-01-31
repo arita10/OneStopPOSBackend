@@ -4,23 +4,14 @@ const pool = require('../../config/database');
 const asyncHandler = require('../../utils/asyncHandler');
 
 /**
- * GET /api/kasa/balance-sheets/expense-types
- * Get all expense types
- */
-router.get('/expense-types', asyncHandler(async (req, res) => {
-  const result = await pool.query('SELECT * FROM kasa_expense_types WHERE is_active = true ORDER BY name');
-  res.json(result.rows);
-}));
-
-/**
  * GET /api/kasa/balance-sheets
- * Get all balance sheets
+ * Get all balance sheets with optional date range filter
  */
 router.get('/', asyncHandler(async (req, res) => {
-  const { start_date, end_date, limit = 100, offset = 0 } = req.query;
   const userId = req.user.id;
+  const { start_date, end_date, limit = 100, offset = 0 } = req.query;
 
-  let query = 'SELECT * FROM kasa_balance_sheets WHERE user_id = $1';
+  let query = 'SELECT * FROM balance_sheets WHERE user_id = $1';
   const params = [userId];
   let paramCount = 1;
 
@@ -47,14 +38,25 @@ router.get('/', asyncHandler(async (req, res) => {
   params.push(parseInt(offset));
 
   const result = await pool.query(query, params);
-  
-  // Get total count
-  let countQuery = 'SELECT COUNT(*) FROM kasa_balance_sheets WHERE user_id = $1';
+
+  // Get total count with same filters
+  let countQuery = 'SELECT COUNT(*) FROM balance_sheets WHERE user_id = $1';
   const countParams = [userId];
-  // ... (reuse params logic if needed, but simpler to just run query)
-  // For brevity/speed in this tool, simplifying count logic or skipping exact count if not critical. 
-  // I will just return the data for now or do a simple count.
-  const countResult = await pool.query('SELECT COUNT(*) FROM kasa_balance_sheets WHERE user_id = $1', [userId]);
+  let countParamNum = 1;
+
+  if (start_date) {
+    countParamNum++;
+    countQuery += ` AND date >= $${countParamNum}`;
+    countParams.push(start_date);
+  }
+
+  if (end_date) {
+    countParamNum++;
+    countQuery += ` AND date <= $${countParamNum}`;
+    countParams.push(end_date);
+  }
+
+  const countResult = await pool.query(countQuery, countParams);
 
   res.json({
     data: result.rows,
@@ -66,51 +68,89 @@ router.get('/', asyncHandler(async (req, res) => {
 
 /**
  * GET /api/kasa/balance-sheets/:date
- * Get balance sheet by date with expenses
+ * Get balance sheet by date with all expense types
  */
 router.get('/:date', asyncHandler(async (req, res) => {
-  const { date } = req.params;
   const userId = req.user.id;
+  const { date } = req.params;
 
+  // Get balance sheet
   const sheetResult = await pool.query(
-    'SELECT * FROM kasa_balance_sheets WHERE user_id = $1 AND date = $2',
-    [userId, date]
+    'SELECT * FROM balance_sheets WHERE date = $1 AND user_id = $2',
+    [date, userId]
   );
 
   if (sheetResult.rows.length === 0) {
-    return res.status(404).json({ error: 'Balance sheet not found for this date' });
+    // Return empty template with system data
+    const systemData = await getSystemDataForDate(date);
+    const yesterdayDevir = await getYesterdayKalanDevir(userId, date);
+
+    return res.json({
+      date,
+      exists: false,
+      system_data: systemData,
+      yesterday_kalan_devir: yesterdayDevir,
+      balance_sheet: null,
+      expense_types: []
+    });
   }
 
-  const sheet = sheetResult.rows[0];
+  const balanceSheet = sheetResult.rows[0];
 
-  const expensesResult = await pool.query(
-    `SELECT e.*, t.name as type_name 
-     FROM kasa_balance_sheet_expenses e 
-     JOIN kasa_expense_types t ON e.expense_type_id = t.id 
-     WHERE e.balance_sheet_id = $1`,
-    [sheet.id]
+  // Get expense types with type and supplier info
+  const expenseTypesResult = await pool.query(
+    `SELECT
+       e.*,
+       et.name as expense_type_name,
+       s.name as supplier_name
+     FROM balance_sheet_expenses e
+     LEFT JOIN expense_types et ON e.expense_type_id = et.id
+     LEFT JOIN suppliers s ON e.supplier_id = s.id
+     WHERE e.balance_sheet_id = $1
+     ORDER BY et.name, e.created_at`,
+    [balanceSheet.id]
   );
 
   res.json({
-    ...sheet,
-    expenses: expensesResult.rows
+    date,
+    exists: true,
+    balance_sheet: balanceSheet,
+    expense_types: expenseTypesResult.rows
+  });
+}));
+
+/**
+ * GET /api/kasa/balance-sheets/:date/system-data
+ * Get system calculated data for a date (revenue, profit from transactions)
+ */
+router.get('/:date/system-data', asyncHandler(async (req, res) => {
+  const { date } = req.params;
+  const userId = req.user.id;
+
+  const systemData = await getSystemDataForDate(date);
+  const yesterdayDevir = await getYesterdayKalanDevir(userId, date);
+
+  res.json({
+    date,
+    ...systemData,
+    yesterday_kalan_devir: yesterdayDevir
   });
 }));
 
 /**
  * POST /api/kasa/balance-sheets
- * Create or update a balance sheet
+ * Create or update a balance sheet with expenses
  */
 router.post('/', asyncHandler(async (req, res) => {
+  const userId = req.user.id;
   const {
     date,
-    cash_count = 0,
-    card_count = 0,
-    expenses = [], // Array of { expense_type_id, description, amount }
-    notes
+    cash_count,
+    card_count,
+    credit_given,
+    notes,
+    expenses // Array of { expense_type_id, supplier_id, description, amount }
   } = req.body;
-  
-  const userId = req.user.id;
 
   if (!date) {
     return res.status(400).json({ error: 'Date is required' });
@@ -121,152 +161,166 @@ router.post('/', asyncHandler(async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // 1. Calculate System Totals (Revenue, Credit Given)
-    // Revenue from completed transactions on that date
-    const revenueRes = await client.query(
-      `SELECT COALESCE(SUM(total), 0) as total 
-       FROM transactions 
-       WHERE user_id = $1 AND date(created_at) = $2 AND status = 'completed'`,
-      [userId, date]
-    );
-    const total_revenue = parseFloat(revenueRes.rows[0].total);
+    // Get system data
+    const systemData = await getSystemDataForDate(date);
+    const yesterdayDevir = await getYesterdayKalanDevir(userId, date);
 
-    // Credit given from verisiye transactions (type='credit') on that date
-    const creditRes = await client.query(
-      `SELECT COALESCE(SUM(amount), 0) as total 
-       FROM verisiye_transactions 
-       WHERE user_id = $1 AND date(created_at) = $2 AND type = 'credit'`,
-      [userId, date]
-    );
-    const total_credit_given = parseFloat(creditRes.rows[0].total);
+    // Calculate expense totals by type
+    let totalCashExpense = 0;
+    let totalCardExpense = 0;
+    let totalDevirExpense = 0;
 
-    // 2. Process Expenses
-    // We need to categorize expenses to 'kasa' (cash) and 'kart' (card) to calculate totals.
-    // Fetch expense types map
-    const typesRes = await client.query('SELECT id, name FROM kasa_expense_types');
-    const typesMap = {}; // id -> name
-    typesRes.rows.forEach(t => typesMap[t.id] = t.name);
+    if (expenses && expenses.length > 0) {
+      for (const exp of expenses) {
+        // Get expense type name
+        const typeResult = await client.query(
+          'SELECT name FROM expense_types WHERE id = $1',
+          [exp.expense_type_id]
+        );
 
-    let cash_expense_total = 0;
-    let card_expense_total = 0;
+        if (typeResult.rows.length > 0) {
+          const typeName = typeResult.rows[0].name.toLowerCase();
+          const amount = parseFloat(exp.amount) || 0;
 
-    for (const exp of expenses) {
-      const typeName = typesMap[exp.expense_type_id];
-      const amount = parseFloat(exp.amount) || 0;
-      if (typeName === 'kasa') {
-        cash_expense_total += amount;
-      } else if (typeName === 'kart') {
-        card_expense_total += amount;
+          if (typeName === 'kasa') {
+            totalCashExpense += amount;
+          } else if (typeName === 'kart') {
+            totalCardExpense += amount;
+          } else if (typeName === 'devir') {
+            totalDevirExpense += amount;
+          }
+        }
       }
     }
 
-    // 3. Calculate Diff
-    // diff = total_revenue - (cash_count + total_credit_given + card_count + cash_expense_total)
-    const calculated_diff = total_revenue - (parseFloat(cash_count) + total_credit_given + parseFloat(card_count) + cash_expense_total);
+    // Calculate difference and total_devir
+    const cashCountVal = parseFloat(cash_count) || 0;
+    const cardCountVal = parseFloat(card_count) || 0;
+    const creditGivenVal = parseFloat(credit_given) || 0;
+    const totalRevenue = parseFloat(systemData.total_revenue) || 0;
 
-    // 4. Get Previous Devir
-    const prevDevirRes = await client.query(
-      `SELECT total_devir FROM kasa_balance_sheets 
-       WHERE user_id = $1 AND date < $2 
-       ORDER BY date DESC LIMIT 1`,
-      [userId, date]
-    );
-    const previous_devir = prevDevirRes.rows.length > 0 ? parseFloat(prevDevirRes.rows[0].total_devir) : 0;
+    // difference = total_revenue - (cash_count + credit_given + card_count + total_cash_expense)
+    const difference = totalRevenue - (cashCountVal + creditGivenVal + cardCountVal + totalCashExpense);
 
-    // 5. Calculate Total Devir (Closing Balance)
-    // total_devir = cash_count + previous_devir
-    // (Assuming cash_count is what is in the box, and we add yesterday's carry over if it wasn't already in the box?)
-    // Wait, if "cash_count" is the PHYSICAL count, it INCLUDES yesterday's devir if that money is still there.
-    // But the user formula was: "total devir = total cash + yester day kalan devir".
-    // This implies "total cash" is today's net cash?
-    // User Prompt: "total devir = total cash + yester day kalan devir"
-    // AND "diff = (total system - (cash cout ...))"
-    // Use the User's Formula literally.
-    const total_devir = parseFloat(cash_count) + previous_devir;
+    // total_devir = cash_count + yesterday_kalan_devir
+    const totalDevir = cashCountVal + yesterdayDevir;
 
-    // 6. Upsert Balance Sheet
-    // Check if exists
-    const checkRes = await client.query(
-      'SELECT id FROM kasa_balance_sheets WHERE user_id = $1 AND date = $2',
-      [userId, date]
+    // Check if balance sheet exists
+    const existingResult = await client.query(
+      'SELECT id FROM balance_sheets WHERE date = $1 AND user_id = $2',
+      [date, userId]
     );
 
-    let sheetId;
+    let balanceSheet;
 
-    if (checkRes.rows.length > 0) {
-      sheetId = checkRes.rows[0].id;
-      await client.query(
-        `UPDATE kasa_balance_sheets 
-         SET total_revenue = $1, 
-             total_credit_given = $2,
+    if (existingResult.rows.length > 0) {
+      // Update existing
+      const updateResult = await client.query(
+        `UPDATE balance_sheets
+         SET total_revenue = $1,
+             total_profit = $2,
              cash_count = $3,
              card_count = $4,
-             cash_expense_total = $5,
-             card_expense_total = $6,
-             calculated_diff = $7,
-             previous_devir = $8,
-             total_devir = $9,
-             notes = COALESCE($10, notes),
+             credit_given = $5,
+             total_cash_expense = $6,
+             total_card_expense = $7,
+             total_devir_expense = $8,
+             difference = $9,
+             yesterday_kalan_devir = $10,
+             total_devir = $11,
+             notes = $12,
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = $11`,
+         WHERE id = $13
+         RETURNING *`,
         [
-          total_revenue, total_credit_given, cash_count, card_count,
-          cash_expense_total, card_expense_total, calculated_diff,
-          previous_devir, total_devir, notes, sheetId
+          systemData.total_revenue,
+          systemData.total_profit,
+          cashCountVal,
+          cardCountVal,
+          creditGivenVal,
+          totalCashExpense,
+          totalCardExpense,
+          totalDevirExpense,
+          difference,
+          yesterdayDevir,
+          totalDevir,
+          notes || null,
+          existingResult.rows[0].id
         ]
       );
-      
-      // Delete old expenses
-      await client.query('DELETE FROM kasa_balance_sheet_expenses WHERE balance_sheet_id = $1', [sheetId]);
+      balanceSheet = updateResult.rows[0];
+
+      // Delete old expense types
+      await client.query(
+        'DELETE FROM balance_sheet_expenses WHERE balance_sheet_id = $1',
+        [balanceSheet.id]
+      );
     } else {
-      const insertRes = await client.query(
-        `INSERT INTO kasa_balance_sheets 
-         (user_id, date, total_revenue, total_credit_given, cash_count, card_count, 
-          cash_expense_total, card_expense_total, calculated_diff, previous_devir, total_devir, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         RETURNING id`,
+      // Create new
+      const insertResult = await client.query(
+        `INSERT INTO balance_sheets
+         (user_id, date, total_revenue, total_profit, cash_count, card_count, credit_given,
+          total_cash_expense, total_card_expense, total_devir_expense, difference,
+          yesterday_kalan_devir, total_devir, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         RETURNING *`,
         [
-          userId, date, total_revenue, total_credit_given, cash_count, card_count,
-          cash_expense_total, card_expense_total, calculated_diff, previous_devir, total_devir, notes
+          userId,
+          date,
+          systemData.total_revenue,
+          systemData.total_profit,
+          cashCountVal,
+          cardCountVal,
+          creditGivenVal,
+          totalCashExpense,
+          totalCardExpense,
+          totalDevirExpense,
+          difference,
+          yesterdayDevir,
+          totalDevir,
+          notes || null
         ]
       );
-      sheetId = insertRes.rows[0].id;
+      balanceSheet = insertResult.rows[0];
     }
 
-    // 7. Insert New Expenses
-    if (expenses.length > 0) {
-      const expenseValues = expenses.map(e => [
-        sheetId, 
-        e.expense_type_id, 
-        e.description, 
-        parseFloat(e.amount) || 0
-      ]);
-      
-      // Bulk insert (or loop)
-      for (const vals of expenseValues) {
+    // Insert expense types
+    if (expenses && expenses.length > 0) {
+      for (const exp of expenses) {
         await client.query(
-          `INSERT INTO kasa_balance_sheet_expenses (balance_sheet_id, expense_type_id, description, amount)
-           VALUES ($1, $2, $3, $4)`,
-          vals
+          `INSERT INTO balance_sheet_expenses
+           (balance_sheet_id, expense_type_id, supplier_id, description, amount)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [
+            balanceSheet.id,
+            exp.expense_type_id,
+            exp.supplier_id || null,
+            exp.description || null,
+            parseFloat(exp.amount) || 0
+          ]
         );
       }
     }
 
     await client.query('COMMIT');
 
-    // Return the updated full object
-    const finalSheet = await client.query('SELECT * FROM kasa_balance_sheets WHERE id = $1', [sheetId]);
-    const finalExpenses = await client.query(
-      `SELECT e.*, t.name as type_name 
-       FROM kasa_balance_sheet_expenses e 
-       JOIN kasa_expense_types t ON e.expense_type_id = t.id 
-       WHERE e.balance_sheet_id = $1`,
-      [sheetId]
+    // Get expense types with type and supplier names
+    const expenseTypesWithNames = await pool.query(
+      `SELECT
+         e.*,
+         et.name as expense_type_name,
+         s.name as supplier_name
+       FROM balance_sheet_expenses e
+       LEFT JOIN expense_types et ON e.expense_type_id = et.id
+       LEFT JOIN suppliers s ON e.supplier_id = s.id
+       WHERE e.balance_sheet_id = $1
+       ORDER BY et.name, e.created_at`,
+      [balanceSheet.id]
     );
 
-    res.json({
-      ...finalSheet.rows[0],
-      expenses: finalExpenses.rows
+    res.status(existingResult.rows.length > 0 ? 200 : 201).json({
+      balance_sheet: balanceSheet,
+      expense_types: expenseTypesWithNames.rows
     });
 
   } catch (error) {
@@ -276,5 +330,72 @@ router.post('/', asyncHandler(async (req, res) => {
     client.release();
   }
 }));
+
+/**
+ * DELETE /api/kasa/balance-sheets/:date
+ * Delete a balance sheet and its expenses
+ */
+router.delete('/:date', asyncHandler(async (req, res) => {
+  const userId = req.user.id;
+  const { date } = req.params;
+
+  const result = await pool.query(
+    'DELETE FROM balance_sheets WHERE date = $1 AND user_id = $2 RETURNING *',
+    [date, userId]
+  );
+
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: 'Balance sheet not found' });
+  }
+
+  res.json({ message: 'Balance sheet deleted successfully' });
+}));
+
+/**
+ * Helper: Get system data for a date (from transactions)
+ */
+async function getSystemDataForDate(date) {
+  const result = await pool.query(
+    `SELECT
+       COALESCE(SUM(total_amount), 0) as total_revenue,
+       COALESCE(SUM(total_profit), 0) as total_profit,
+       COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total_amount ELSE 0 END), 0) as cash_sales,
+       COALESCE(SUM(CASE WHEN payment_method = 'card' THEN total_amount ELSE 0 END), 0) as card_sales,
+       COALESCE(SUM(CASE WHEN payment_method = 'credit' THEN total_amount ELSE 0 END), 0) as credit_sales,
+       COUNT(*) as transaction_count
+     FROM transactions
+     WHERE DATE(created_at) = $1 AND status != 'voided'`,
+    [date]
+  );
+
+  return {
+    total_revenue: parseFloat(result.rows[0].total_revenue) || 0,
+    total_profit: parseFloat(result.rows[0].total_profit) || 0,
+    cash_sales: parseFloat(result.rows[0].cash_sales) || 0,
+    card_sales: parseFloat(result.rows[0].card_sales) || 0,
+    credit_sales: parseFloat(result.rows[0].credit_sales) || 0,
+    transaction_count: parseInt(result.rows[0].transaction_count) || 0
+  };
+}
+
+/**
+ * Helper: Get yesterday's kalan devir (total_devir from previous day)
+ */
+async function getYesterdayKalanDevir(userId, date) {
+  const result = await pool.query(
+    `SELECT total_devir
+     FROM balance_sheets
+     WHERE user_id = $1 AND date < $2
+     ORDER BY date DESC
+     LIMIT 1`,
+    [userId, date]
+  );
+
+  if (result.rows.length > 0) {
+    return parseFloat(result.rows[0].total_devir) || 0;
+  }
+
+  return 0;
+}
 
 module.exports = router;

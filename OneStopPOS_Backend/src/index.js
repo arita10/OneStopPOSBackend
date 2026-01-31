@@ -26,6 +26,7 @@ const verisiyeTransactionRoutes = require('./routes/verisiye/transactions');
 const verisiyeReportRoutes = require('./routes/verisiye/reports');
 const verisiyeWhatsappRoutes = require('./routes/verisiye/whatsapp');
 const kasaExpenseProductRoutes = require('./routes/kasa/expenseProducts');
+const kasaExpenseTypeRoutes = require('./routes/kasa/expenseTypes');
 const kasaBalanceSheetRoutes = require('./routes/kasa/balanceSheets');
 const kasaReportRoutes = require('./routes/kasa/reports');
 
@@ -57,6 +58,7 @@ app.use('/api/verisiye/transactions', authenticate, verisiyeTransactionRoutes);
 app.use('/api/verisiye/reports', authenticate, verisiyeReportRoutes);
 app.use('/api/verisiye/whatsapp', authenticate, verisiyeWhatsappRoutes);
 app.use('/api/kasa/expense-products', authenticate, kasaExpenseProductRoutes);
+app.use('/api/kasa/expense-types', authenticate, kasaExpenseTypeRoutes);
 app.use('/api/kasa/balance-sheets', authenticate, kasaBalanceSheetRoutes);
 app.use('/api/kasa/reports', authenticate, kasaReportRoutes);
 
