@@ -12,7 +12,7 @@ const SYSTEM_TYPES = ['kasa', 'kart', 'devir'];
  */
 router.get('/', asyncHandler(async (req, res) => {
   const result = await pool.query(
-    'SELECT * FROM kasa_expense_types WHERE is_active = true ORDER BY name ASC'
+    'SELECT * FROM expense_types WHERE is_active = true ORDER BY name ASC'
   );
   res.json(result.rows);
 }));
@@ -25,7 +25,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   const result = await pool.query(
-    'SELECT * FROM kasa_expense_types WHERE id = $1 AND is_active = true',
+    'SELECT * FROM expense_types WHERE id = $1 AND is_active = true',
     [id]
   );
 
@@ -49,7 +49,7 @@ router.post('/', asyncHandler(async (req, res) => {
 
   // Check for duplicate name
   const existing = await pool.query(
-    'SELECT id FROM kasa_expense_types WHERE name ILIKE $1 AND is_active = true',
+    'SELECT id FROM expense_types WHERE name ILIKE $1 AND is_active = true',
     [name]
   );
 
@@ -58,7 +58,7 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 
   const result = await pool.query(
-    `INSERT INTO kasa_expense_types (name, description)
+    `INSERT INTO expense_types (name, description)
      VALUES ($1, $2)
      RETURNING *`,
     [name.toLowerCase(), description || null]
@@ -76,7 +76,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
   const { name, description } = req.body;
 
   // Check if it's a system type
-  const checkSystem = await pool.query('SELECT name FROM kasa_expense_types WHERE id = $1', [id]);
+  const checkSystem = await pool.query('SELECT name FROM expense_types WHERE id = $1', [id]);
   if (checkSystem.rows.length > 0 && SYSTEM_TYPES.includes(checkSystem.rows[0].name)) {
     return res.status(403).json({ error: 'Cannot modify system expense types (kasa, kart, devir)' });
   }
@@ -84,7 +84,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
   // Check for duplicate name if changing name
   if (name) {
     const existing = await pool.query(
-      'SELECT id FROM kasa_expense_types WHERE name ILIKE $1 AND id != $2 AND is_active = true',
+      'SELECT id FROM expense_types WHERE name ILIKE $1 AND id != $2 AND is_active = true',
       [name, id]
     );
 
@@ -94,7 +94,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
   }
 
   const result = await pool.query(
-    `UPDATE kasa_expense_types
+    `UPDATE expense_types
      SET name = COALESCE($1, name),
          description = COALESCE($2, description),
          updated_at = CURRENT_TIMESTAMP
@@ -118,13 +118,13 @@ router.delete('/:id', asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   // Check if it's a system type
-  const checkSystem = await pool.query('SELECT name FROM kasa_expense_types WHERE id = $1', [id]);
+  const checkSystem = await pool.query('SELECT name FROM expense_types WHERE id = $1', [id]);
   if (checkSystem.rows.length > 0 && SYSTEM_TYPES.includes(checkSystem.rows[0].name)) {
     return res.status(403).json({ error: 'Cannot delete system expense types (kasa, kart, devir)' });
   }
 
   const result = await pool.query(
-    'UPDATE kasa_expense_types SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
+    'UPDATE expense_types SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
     [id]
   );
 
