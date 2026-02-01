@@ -3,18 +3,17 @@ const router = express.Router();
 const pool = require('../../config/database');
 const asyncHandler = require('../../utils/asyncHandler');
 
+// System types that cannot be modified or deleted
+const SYSTEM_TYPES = ['kasa', 'kart', 'devir'];
+
 /**
  * GET /api/kasa/expense-types
- * Get all expense types for the authenticated user
+ * Get all active expense types
  */
 router.get('/', asyncHandler(async (req, res) => {
-  const userId = req.user.id;
-
   const result = await pool.query(
-    'SELECT * FROM expense_types WHERE user_id = $1 AND is_active = true ORDER BY name ASC',
-    [userId]
+    'SELECT * FROM kasa_expense_types WHERE is_active = true ORDER BY name ASC'
   );
-
   res.json(result.rows);
 }));
 
@@ -23,12 +22,11 @@ router.get('/', asyncHandler(async (req, res) => {
  * Get expense type by ID
  */
 router.get('/:id', asyncHandler(async (req, res) => {
-  const userId = req.user.id;
   const { id } = req.params;
 
   const result = await pool.query(
-    'SELECT * FROM expense_types WHERE id = $1 AND user_id = $2 AND is_active = true',
-    [id, userId]
+    'SELECT * FROM kasa_expense_types WHERE id = $1 AND is_active = true',
+    [id]
   );
 
   if (result.rows.length === 0) {
@@ -43,7 +41,6 @@ router.get('/:id', asyncHandler(async (req, res) => {
  * Create a new expense type
  */
 router.post('/', asyncHandler(async (req, res) => {
-  const userId = req.user.id;
   const { name, description } = req.body;
 
   if (!name) {
@@ -52,8 +49,8 @@ router.post('/', asyncHandler(async (req, res) => {
 
   // Check for duplicate name
   const existing = await pool.query(
-    'SELECT id FROM expense_types WHERE name ILIKE $1 AND user_id = $2 AND is_active = true',
-    [name, userId]
+    'SELECT id FROM kasa_expense_types WHERE name ILIKE $1 AND is_active = true',
+    [name]
   );
 
   if (existing.rows.length > 0) {
@@ -61,52 +58,13 @@ router.post('/', asyncHandler(async (req, res) => {
   }
 
   const result = await pool.query(
-    `INSERT INTO expense_types (user_id, name, description)
-     VALUES ($1, $2, $3)
+    `INSERT INTO kasa_expense_types (name, description)
+     VALUES ($1, $2)
      RETURNING *`,
-    [userId, name, description || null]
+    [name.toLowerCase(), description || null]
   );
 
   res.status(201).json(result.rows[0]);
-}));
-
-/**
- * POST /api/kasa/expense-types/init-defaults
- * Initialize default expense types for user (kasa, kart, devir)
- */
-router.post('/init-defaults', asyncHandler(async (req, res) => {
-  const userId = req.user.id;
-
-  const defaults = [
-    { name: 'kasa', description: 'Cash expenses' },
-    { name: 'kart', description: 'Card expenses' },
-    { name: 'devir', description: 'Carry over expenses' }
-  ];
-
-  const inserted = [];
-
-  for (const def of defaults) {
-    // Check if exists
-    const existing = await pool.query(
-      'SELECT id FROM expense_types WHERE name ILIKE $1 AND user_id = $2',
-      [def.name, userId]
-    );
-
-    if (existing.rows.length === 0) {
-      const result = await pool.query(
-        `INSERT INTO expense_types (user_id, name, description)
-         VALUES ($1, $2, $3)
-         RETURNING *`,
-        [userId, def.name, def.description]
-      );
-      inserted.push(result.rows[0]);
-    }
-  }
-
-  res.status(201).json({
-    message: `${inserted.length} default expense types created`,
-    created: inserted
-  });
 }));
 
 /**
@@ -114,15 +72,20 @@ router.post('/init-defaults', asyncHandler(async (req, res) => {
  * Update an expense type
  */
 router.put('/:id', asyncHandler(async (req, res) => {
-  const userId = req.user.id;
   const { id } = req.params;
   const { name, description } = req.body;
 
-  // Check for duplicate name (excluding current)
+  // Check if it's a system type
+  const checkSystem = await pool.query('SELECT name FROM kasa_expense_types WHERE id = $1', [id]);
+  if (checkSystem.rows.length > 0 && SYSTEM_TYPES.includes(checkSystem.rows[0].name)) {
+    return res.status(403).json({ error: 'Cannot modify system expense types (kasa, kart, devir)' });
+  }
+
+  // Check for duplicate name if changing name
   if (name) {
     const existing = await pool.query(
-      'SELECT id FROM expense_types WHERE name ILIKE $1 AND user_id = $2 AND id != $3 AND is_active = true',
-      [name, userId, id]
+      'SELECT id FROM kasa_expense_types WHERE name ILIKE $1 AND id != $2 AND is_active = true',
+      [name, id]
     );
 
     if (existing.rows.length > 0) {
@@ -131,13 +94,13 @@ router.put('/:id', asyncHandler(async (req, res) => {
   }
 
   const result = await pool.query(
-    `UPDATE expense_types
+    `UPDATE kasa_expense_types
      SET name = COALESCE($1, name),
          description = COALESCE($2, description),
          updated_at = CURRENT_TIMESTAMP
-     WHERE id = $3 AND user_id = $4 AND is_active = true
+     WHERE id = $3 AND is_active = true
      RETURNING *`,
-    [name, description, id, userId]
+    [name ? name.toLowerCase() : null, description, id]
   );
 
   if (result.rows.length === 0) {
@@ -152,12 +115,17 @@ router.put('/:id', asyncHandler(async (req, res) => {
  * Soft delete an expense type
  */
 router.delete('/:id', asyncHandler(async (req, res) => {
-  const userId = req.user.id;
   const { id } = req.params;
 
+  // Check if it's a system type
+  const checkSystem = await pool.query('SELECT name FROM kasa_expense_types WHERE id = $1', [id]);
+  if (checkSystem.rows.length > 0 && SYSTEM_TYPES.includes(checkSystem.rows[0].name)) {
+    return res.status(403).json({ error: 'Cannot delete system expense types (kasa, kart, devir)' });
+  }
+
   const result = await pool.query(
-    'UPDATE expense_types SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND user_id = $2 RETURNING *',
-    [id, userId]
+    'UPDATE kasa_expense_types SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
+    [id]
   );
 
   if (result.rows.length === 0) {
